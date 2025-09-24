@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>phase3</title>
+    <link rel="stylesheet" href="https://use.typekit.net/dgx5jfj.css">
+    <link rel="stylesheet" href="https://use.typekit.net/mwo0suw.css">
+    <script src="libraries/p5.min.js"></script>
+    <script src="libraries/p5.sound.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: black;
+            font-family: "HelveticaNeue", sans-serif;
+        }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+<script>
+    let audioBtn, lightBtn;
+    let maskImg, maskImg2, song;
+    let playMusic = false;
+    let blendSwitch = false;
+    let normalCursor, pointerCursor;
+
+    let boxes = [];
+    let clickedOrder = [];
+    let allClicked = false;
+
+    let dotSize = 12;
+    let pulseSpeed = 0.1;
+
+    let instructionText = "*Click on the dots and connect them";
+    let blinkSpeed = 60; // frames per blink
+
+    let rays = [];
+    let transitionTime = 0;
+    let transitionDuration = 3000; // 3 seconds
+    let transitioning = false;
+
+    function preload() {
+        helveticaNeue = loadFont("fonts/HelveticaNeueItalic.ttf");
+        maskImg = loadImage("elements/300ppi/MASKP4.png"); 
+        maskImg2 = loadImage("elements/300ppi/maskp4dither.png"); 
+        normalCursor = loadImage("elements/1x/cursor2-8.png");
+        pointerCursor = loadImage("elements/1x/cursor2act-8.png");
+       song = loadSound("elements/SVG/200222-electronic-drum-amp-bass-cyber-wonder-155550.mp3", () => {
+    // Check local storage on load
+    if (localStorage.getItem('audioState') === 'true') {
+      song.loop();
+      playMusic = true;
+    }
+  });
+    }
+
+    function setup() {
+        createCanvas(windowWidth, windowHeight);
+        noCursor();
+        
+        audioBtn = createButton("AUDIO");
+        audioBtn.position(width - 260, 40);
+        audioBtn.class("glitch-btn");
+        audioBtn.mousePressed(toggleAudio);
+        styleButton(audioBtn);
+
+        lightBtn = createButton("LIGHT");
+        lightBtn.position(width - 140, 40);
+        lightBtn.class("glitch-btn");
+        lightBtn.mousePressed(toggleLight);
+        styleButton(lightBtn);
+
+        let boxPositions = [
+            {x: width*0.43, y: height*0.49, w: 80, h: 40},
+            {x: width*0.54, y: height*0.25, w: 100, h: 160},
+            {x: width*0.57, y: height*0.47, w: 60, h: 100},
+            {x: width*0.51, y: height*0.48, w: 110, h: 190},
+            {x: width*0.53, y: height*0.67, w: 50, h: 30},
+            {x: width*0.46, y: height*0.65, w: 60, h: 100},
+        ];
+
+        for (let pos of boxPositions) {
+            boxes.push({x: pos.x, y: pos.y, w: pos.w, h: pos.h, clicked: false});
+        }
+    }
+
+    function draw() {
+        background(10);
+        
+        if (!transitioning) {
+            if (blendSwitch) blendMode(HARD_LIGHT);
+            else blendMode(BLEND);
+
+            let hovering = false;
+            for (let b of boxes) {
+                if (dist(mouseX, mouseY, b.x, b.y) < dotSize) hovering = true;
+            }
+
+            if (maskImg) {
+                push();
+                imageMode(CENTER);
+                let maxSize = min(width, height) * 0.8;
+                let aspect = maskImg.width / maskImg.height;
+                let imgW = aspect > 1 ? maxSize : maxSize * aspect;
+                let imgH = aspect > 1 ? maxSize / aspect : maxSize;
+
+                if (hovering && frameCount % 10 < 5 && maskImg2) {
+                    image(maskImg2, width / 2, height / 2, imgW, imgH);
+                } else {
+                    image(maskImg, width / 2, height / 2, imgW, imgH);
+                }
+                pop();
+            }
+
+            for (let b of boxes) {
+                rectMode(CENTER);
+                noFill();
+                stroke(0, 255, 0);
+                rect(b.x, b.y, b.w, b.h);
+
+                let isHoveringDot = dist(mouseX, mouseY, b.x, b.y) < dotSize;
+                let size = isHoveringDot
+                    ? dotSize + 4 * sin(frameCount * pulseSpeed * TWO_PI)
+                    : dotSize;
+
+                noStroke();
+                fill(b.clicked ? "lime" : "green");
+                ellipse(b.x, b.y, size);
+            }
+
+            stroke("lime");
+            strokeWeight(3);
+            for (let i = 0; i < clickedOrder.length - 1; i++) {
+                let a = clickedOrder[i];
+                let b = clickedOrder[i+1];
+                line(a.x, a.y, b.x, b.y);
+            }
+
+            if (frameCount % blinkSpeed < blinkSpeed / 2) {
+                push();
+                noStroke();
+                textFont(helveticaNeue);
+                textSize(20);
+                fill(178, 203, 167);
+                textAlign(CENTER, CENTER);
+                text(instructionText, width/2, height - 80);
+                pop();
+            }
+
+            // Add the non-blinking text
+            push();
+            noStroke();
+            textFont(helveticaNeue);
+            textSize(20);
+            fill(178, 203, 167);
+            textAlign(CENTER, CENTER);
+            text("'Remember your real life'", width/2, height - 50);
+            pop();
+        }
+        
+        for (let i = rays.length - 1; i >= 0; i--) {
+            rays[i].update();
+            rays[i].show();
+            if (rays[i].isFaded()) {
+                rays.splice(i, 1);
+            }
+        }
+        
+        if (transitioning) {
+            let elapsed = millis() - transitionTime;
+            
+            let newRaysPerFrame = 1 + elapsed / 300;
+            for (let i = 0; i < newRaysPerFrame; i++) {
+                rays.push(new Ray(width / 2, height / 2, true));
+            }
+
+            if (elapsed >= transitionDuration) {
+                window.location.href = "index.html";
+            }
+        }
+
+        let hovering = false;
+        if (!transitioning) {
+             for (let b of boxes) {
+                if (dist(mouseX, mouseY, b.x, b.y) < dotSize) hovering = true;
+            }
+        }
+        if (isHoveringButton() || hovering) {
+            image(pointerCursor, mouseX, mouseY, 55, 55);
+        } else {
+            image(normalCursor, mouseX, mouseY, 50, 50);
+        }
+    }
+
+    function mousePressed() {
+        if (!transitioning) {
+            let numRays = int(random(60, 120));
+            for (let i = 0; i < numRays; i++) {
+                rays.push(new Ray(mouseX, mouseY, false));
+            }
+
+            for (let b of boxes) {
+                if (!b.clicked && dist(mouseX, mouseY, b.x, b.y) < dotSize) {
+                    b.clicked = true;
+                    clickedOrder.push(b);
+                    if (clickedOrder.length === boxes.length && !allClicked) {
+                        allClicked = true;
+                        triggerWarp();
+                    }
+                }
+            }
+        }
+    }
+
+    function triggerWarp() {
+        document.body.classList.add("warping");
+        transitioning = true;
+        transitionTime = millis();
+        rays = []; 
+    }
+
+    function isHoveringButton() {
+        return audioBtn.elt.matches(":hover") || lightBtn.elt.matches(":hover");
+    }
+
+    function styleButton(btn) {
+        btn.style("padding", "10px 25px");
+        btn.style("border-radius", "25px");
+        btn.style("font-size", "18px");
+        btn.style("border", "1px solid #B2CBA7");
+        btn.style("background", "black");
+        btn.style("font-style", "italic");
+        btn.style("color", "#B2CBA7");
+        btn.style("cursor", "none");
+        btn.style("font-family", "HelveticaNeue, sans-serif");
+        btn.style("transition", "all 0.3s ease");
+        btn.mouseOver(() => { btn.style("background", "#B2CBA7"); btn.style("color", "black"); });
+        btn.mouseOut(() => { btn.style("background", "black"); btn.style("color", "#B2CBA7"); });
+    }
+
+function toggleAudio() {
+  if (playMusic) {
+    song.pause();
+    localStorage.setItem('audioState', 'false'); // Save state
+  } else {
+    song.loop();
+    localStorage.setItem('audioState', 'true'); // Save state
+  }
+  playMusic = !playMusic;
+}
+
+    function toggleLight() {
+        blendSwitch = !blendSwitch;
+    }
+
+    function windowResized() {
+        resizeCanvas(windowWidth, windowHeight);
+        audioBtn.position(width - 260, 40);
+        lightBtn.position(width - 140, 40);
+    }
+
+    class Ray {
+        constructor(x, y, isTransitioning = false) {
+            this.x = x;
+            this.y = y;
+            this.angle = random(TWO_PI);
+            this.length = random(max(width, height) * 0.5, max(width, height) * 1.2);
+            this.weight = random(0.5, 3);
+            this.alpha = random(80, 200);
+            this.isFading = isTransitioning;
+
+            this.segments = [];
+            let remaining = this.length;
+            while (remaining > 0) {
+                let segLen = random(10, 80);
+                this.segments.push(segLen);
+                remaining -= segLen + random(5, 30);
+            }
+        }
+
+        update() {
+            if (this.isFading) {
+                this.alpha -= 1;
+            }
+        }
+
+        isFaded() {
+            return this.isFading && this.alpha <= 0;
+        }
+
+        show() {
+            push();
+            translate(this.x, this.y);
+            rotate(this.angle);
+
+            strokeWeight(this.weight);
+            stroke(178, 203, 167, this.alpha);
+            noFill();
+
+            let pos = 0;
+            for (let seg of this.segments) {
+                line(0, pos, 0, pos + seg);
+                pos += seg + random(10, 30);
+            }
+            pop();
+        }
+    }
+</script>
+</body>
+</html>
