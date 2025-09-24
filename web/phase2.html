@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>phase2</title>
+<link rel="stylesheet" href="https://use.typekit.net/dgx5jfj.css">
+<link rel="stylesheet" href="https://use.typekit.net/mwo0suw.css">
+
+<script src="libraries/p5.min.js"></script>
+<script src="libraries/p5.sound.min.js"></script>
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+    font-family: "HelveticaNeue", sans-serif;
+  }
+  canvas { display: block; }
+
+  .input-container {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    border-radius: 40px;
+    background: rgba(0,0,0,0);
+    border: 1px solid #000000;
+  }
+  .input-container input {
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #000000;
+    font-size: 18px;
+    font-style: italic;
+    width: 200px;
+  }
+  .input-container input::placeholder {
+    color: #000000;
+    opacity: 0.7;
+  }
+
+  .submit-arrow {
+    border: 1px solid #000000;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    margin-left: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: transparent;
+    cursor: none;
+    transition: all 0.3s ease;
+  }
+  .submit-arrow:hover { background: #000000; }
+  .submit-arrow svg { stroke: #000000; stroke-width: 2; fill: none; transition: stroke 0.3s ease; }
+  .submit-arrow:hover svg { stroke: #B2CBA7; }
+
+  .error-msg {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ff6b6b;
+    font-size: 14px;
+    font-style: italic;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .error-msg.show { opacity: 1; }
+
+  .glitch-btn::before,
+  .glitch-btn::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    border: inherit;
+    border-radius: inherit;
+    padding: inherit;
+    font: inherit;
+    text-align: center;
+    line-height: normal;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: inherit;
+    box-sizing: border-box;
+    opacity: 0;
+  }
+  .glitch-btn::before { color: red; }
+  .glitch-btn::after { color: rgb(0, 255, 13); }
+  .glitch-btn:hover::before,
+  .glitch-btn:hover::after {
+    opacity: 1;
+    animation: glitch-lines 0.6s infinite linear alternate-reverse;
+  }
+  @keyframes glitch-lines {
+    0%   { clip-path: inset(10% 0 85% 0); transform: translateX(-3px); }
+    20%  { clip-path: inset(20% 0 65% 0); transform: translateX(-2px); }
+    40%  { clip-path: inset(80% 0 5% 0); transform: translateX(-4px); }
+    60%  { clip-path: inset(50% 0 30% 0); transform: translateX(-2px); }
+    80%  { clip-path: inset(70% 0 15% 0); transform: translateX(-3px); }
+    100% { clip-path: inset(0 0 0 0); transform: translateX(0); }
+  }
+</style>
+</head>
+
+<body>
+<div class="input-container">
+  <input id="adjInput" type="text" placeholder="*Enter an adjective">
+  <button class="submit-arrow" id="submitBtn">
+    <svg width="20" height="20" viewBox="0 0 24 24">
+      <path d="M12 19V5M5 12l7-7 7 7"/>
+    </svg>
+  </button>
+</div>
+<div class="error-msg" id="errorMsg">*Enter adjectives only</div>
+
+<script>
+let shapeBatches = []; // stores batches of block clusters
+let animate = false;
+let pgBlobs; // Graphics buffer for blobs
+let shapes = [];
+
+let audioBtn, lightBtn, maskImg, song;
+let playMusic = false,
+  blendSwitch = false;
+let normalCursor, pointerCursor, helveticaNeue;
+
+let adjectives = [];
+let adjSet = new Set();
+let inputStage = 0;
+let instructionText = '*How will "you" be?';
+let floatingImgs = [];
+let spacePressCount = 0;
+let blinkSpeed = 60;
+let transitioning = false;
+let bars = [];
+let transitionPhase = 0;
+
+let appreImg, cheerImg, likeImg, valiImg, imageOptions = [];
+
+let nextY = 100;
+let adjSpacing = 180;
+
+const input = document.getElementById("adjInput");
+const submitBtn = document.getElementById("submitBtn");
+const errorMsg = document.getElementById("errorMsg");
+
+// Distortion variables
+let pgMask; // Graphics buffer for the mask
+let distort = false;
+let cx, cy;
+let targetX, targetY;
+
+// --- BlobShape Class ---
+class BlobShape {
+  constructor(x, y, r) {
+    this.pos = createVector(x, y);
+    this.r = r;
+    this.offset = random(1000); // for unique noise
+    this.resolution = int(random(40, 70)); // how many points around
+  }
+
+  update() {
+    this.offset += 0.01; // animate wobble
+  }
+
+  display(pg) {
+    pg.stroke(0);
+    pg.strokeWeight(1);
+    pg.fill(255);
+
+    pg.beginShape();
+    for (let i = 0; i < this.resolution; i++) {
+      let angle = map(i, 0, this.resolution, 0, TWO_PI);
+      let nx = cos(angle) * 0.8 + 1;
+      let ny = sin(angle) * 0.8 + 1;
+      let noiseFactor = noise(nx + this.offset, ny + this.offset);
+      let radius = this.r * (0.7 + noiseFactor * 0.6); // curvy radius
+      let jitterX = random(-1.5, 1.5);
+      let jitterY = random(-1.5, 1.5);
+
+      let x = this.pos.x + cos(angle) * radius + jitterX;
+      let y = this.pos.y + sin(angle) * radius + jitterY;
+      pg.vertex(x, y);
+    }
+    pg.endShape(CLOSE);
+
+    // scattered dots
+    for (let i = 0; i < 8; i++) {
+      pg.noStroke();
+      pg.fill(0);
+      let angle = random(TWO_PI);
+      let dist = random(this.r * 0.3, this.r * 0.8);
+      let dx = this.pos.x + cos(angle) * dist + random(-5, 5);
+      let dy = this.pos.y + sin(angle) * dist + random(-5, 5);
+      let d = random(1, 3);
+      pg.circle(dx, dy, d);
+    }
+  }
+}
+
+// --- Block Cluster Functions ---
+function makeCluster() {
+  let blocks = [];
+  let startX = int(random(width / 40)) * 40;
+  let startY = int(random(height / 40)) * 40;
+  let bw = int(random(10, 40));
+  let bh = int(random(10, 40));
+  let count = int(random(1, 6));
+  blocks.push({
+    x: startX,
+    y: startY,
+    w: bw,
+    h: bh
+  });
+
+  for (let i = 1; i < count; i++) {
+    let last = blocks[int(random(blocks.length))];
+    let dir = random(["up", "down", "left", "right"]);
+    let newBlock = {
+      x: last.x,
+      y: last.y,
+      w: bw,
+      h: bh
+    };
+
+    if (dir === "up") newBlock.y -= bh;
+    if (dir === "down") newBlock.y += bh;
+    if (dir === "left") newBlock.x -= bw;
+    if (dir === "right") newBlock.x += bw;
+
+    if (!blocks.some(b => b.x === newBlock.x && b.y === newBlock.y)) {
+      blocks.push(newBlock);
+    }
+  }
+
+  return {
+    blocks: blocks,
+    vel: createVector(random(-2, 2), random(-2, 2)),
+    center: function() {
+      let sx = 0,
+        sy = 0;
+      for (let b of blocks) {
+        sx += b.x + b.w / 2;
+        sy += b.y + b.h / 2;
+      }
+      return createVector(sx / blocks.length, sy / blocks.length);
+    }
+  };
+}
+
+function drawClusterOutline(cluster) {
+  let edges = new Map();
+  for (let b of cluster.blocks) {
+    let corners = [
+      [b.x, b.y, b.x + b.w, b.y],
+      [b.x + b.w, b.y, b.x + b.w, b.y + b.h],
+      [b.x + b.w, b.y + b.h, b.x, b.y + b.h],
+      [b.x, b.y + b.h, b.x, b.y]
+    ];
+    for (let e of corners) {
+      let key = e.join(",");
+      let rev = [e[2], e[3], e[0], e[1]].join(",");
+      if (edges.has(rev)) {
+        edges.delete(rev);
+      } else {
+        edges.set(key, e);
+      }
+    }
+  }
+  if (edges.size === 0) return;
+  let outline = [];
+  let startKey = edges.keys().next().value;
+  let current = edges.get(startKey);
+  outline.push(createVector(current[0], current[1]));
+  let cx = current[2],
+    cy = current[3];
+  edges.delete(startKey);
+  while (edges.size > 0) {
+    let found = null;
+    for (let [k, e] of edges) {
+      if (e[0] === cx && e[1] === cy) {
+        found = e;
+        break;
+      }
+    }
+    if (!found) break;
+    outline.push(createVector(found[0], found[1]));
+    cx = found[2];
+    cy = found[3];
+    edges.delete(found.join(","));
+  }
+  fill(178, 203, 167);
+  beginShape();
+  for (let p of outline) {
+    vertex(p.x, p.y);
+  }
+  endShape(CLOSE);
+}
+
+// --- Main p5.js Functions ---
+function preload() {
+  helveticaNeue = loadFont("fonts/HelveticaNeueItalic.ttf");
+  maskImg = loadImage("elements/300ppi/maskp1.png");
+  normalCursor = loadImage("elements/1x/cursor1-8.png");
+  pointerCursor = loadImage("elements/1x/cursor2act-8.png");
+ song = loadSound("elements/SVG/200222-electronic-drum-amp-bass-cyber-wonder-155550.mp3", () => {
+    // Check local storage on load
+    if (localStorage.getItem('audioState') === 'true') {
+      song.loop();
+      playMusic = true;
+    }
+  });
+  appreImg = loadImage("elements/300ppi/appre.png");
+  cheerImg = loadImage("elements/300ppi/cheer.png");
+  likeImg = loadImage("elements/300ppi/like.png");
+  valiImg = loadImage("elements/300ppi/vali.png");
+  imageOptions = [appreImg, cheerImg, likeImg, valiImg];
+
+  loadJSON("adjectives_simple_5000.json", data => {
+    adjSet = new Set(data.adjectives.map(w => w.toLowerCase()));
+  });
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  pixelDensity(1);
+
+  // Initialize graphics buffers
+  pgBlobs = createGraphics(windowWidth, windowHeight);
+  pgMask = createGraphics(windowWidth, windowHeight);
+
+  // Initialize distortion variables
+  cx = width / 2;
+  cy = height / 2;
+  targetX = cx;
+  targetY = cy;
+
+  noCursor();
+  textAlign(CENTER, CENTER);
+
+  audioBtn = createButton("AUDIO");
+  audioBtn.position(width - 260, 40);
+  audioBtn.class("glitch-btn");
+  audioBtn.mousePressed(toggleAudio);
+  styleButton(audioBtn);
+
+  lightBtn = createButton("LIGHT");
+  lightBtn.position(width - 140, 40);
+  lightBtn.class("glitch-btn");
+  lightBtn.mousePressed(toggleLight);
+  styleButton(lightBtn);
+
+  function handleSubmit() {
+    let word = input.value.trim().toUpperCase();
+    if (isAdjective(word)) {
+      if (nextY + adjSpacing < height) {
+        let x = random(50, width - 50);
+        adjectives.push({
+          word,
+          x,
+          y: nextY
+        });
+        nextY += adjSpacing;
+      }
+      errorMsg.classList.remove("show");
+      input.value = "";
+      inputStage++;
+      if (inputStage === 1) instructionText = "*Another one";
+      else if (inputStage === 2) instructionText = "*More";
+      else if (inputStage === 3) instructionText = "*Keep adding";
+      else if (inputStage > 3) {
+        document.querySelector(".input-container").style.display = "none";
+        instructionText = "*Press Space bar fast";
+      }
+    } else errorMsg.classList.add("show");
+  }
+
+  submitBtn.addEventListener("click", handleSubmit);
+  input.addEventListener("keypress", e => {
+    if (e.key === "Enter") handleSubmit();
+  });
+}
+
+function draw() {
+  if (transitioning) {
+    drawTransition();
+    return;
+  }
+
+  // Set the blend mode based on the blendSwitch variable
+    if (blendSwitch) {
+        // Use a blend mode that creates a "light" effect, like SCREEN or LIGHTEST
+        // SCREEN mode is a good choice for making light-colored elements appear brighter
+        blendMode(HARD_LIGHT); 
+    } else {
+        // Use the default blend mode
+        blendMode(BLEND); 
+    }
+  background(178, 203, 167);
+
+  // Layer 1: Blob Shapes
+  pgBlobs.clear();
+  for (let s of shapes) {
+    s.update();
+    s.display(pgBlobs);
+  }
+  image(pgBlobs, 0, 0);
+
+  // Layer 2: Adjective text
+  for (let adj of adjectives) {
+    push();
+    textFont(helveticaNeue);
+    textSize(164);
+    fill(1);
+    text(adj.word, adj.x, adj.y);
+    pop();
+  }
+
+  // Layer 3: Block Clusters & Distorted Mask
+  stroke(0);
+  strokeWeight(1);
+  for (let batch of shapeBatches) {
+    for (let cluster of batch) {
+      drawClusterOutline(cluster);
+      if (animate) {
+        for (let b of cluster.blocks) {
+          b.x += cluster.vel.x;
+          b.y += cluster.vel.y;
+        }
+        let c = cluster.center();
+        if (c.x < 0 || c.x > width) cluster.vel.x *= -1;
+        if (c.y < 0 || c.y > height) cluster.vel.y *= -1;
+      }
+    }
+  }
+
+  // Draw and distort the mask
+  drawDistortedMask();
+
+  // Connections when animating
+  if (animate) {
+    stroke(120, 60);
+    for (let batch of shapeBatches) {
+      for (let cluster of batch) {
+        let c1 = cluster.center();
+        for (let otherBatch of shapeBatches) {
+          for (let otherCluster of otherBatch) {
+            if (random() < 0.002) {
+              let c2 = otherCluster.center();
+              line(c1.x, c1.y, c2.x, c2.y);
+            }
+          }
+        }
+      }
+    }
+    stroke(0);
+  }
+
+  // Draw remaining elements
+  if (frameCount % blinkSpeed < blinkSpeed / 2) {
+    push();
+    stroke(178, 203, 167);
+    textFont(helveticaNeue);
+    textSize(20);
+    fill(0);
+    text(instructionText, width / 2, 50);
+    pop();
+  }
+
+  // New blinking text at the bottom left
+            if (frameCount % blinkSpeed < blinkSpeed / 2) {
+                push();
+                noStroke();
+                textFont(helveticaNeue);
+                textSize(20);
+                fill(0);
+                textAlign(LEFT, BOTTOM);
+                text("*Use Enter key to control movement of shapes", 35, height - 50);
+                pop();
+            }
+
+// --- New code to display the non-blinking text ---
+  if (instructionText === "*Press Space bar fast") {
+    push();
+    textFont(helveticaNeue);
+    textSize(24);
+    fill(0);
+noStroke();
+    text("'Receive the praise'", width / 2, height - 50);
+    pop();
+  }
+
+  for (let i = floatingImgs.length - 1; i >= 0; i--) {
+    let fi = floatingImgs[i];
+    push();
+    imageMode(CENTER);
+    tint(255, fi.alpha);
+    let aspect = fi.img.width / fi.img.height;
+    let w = fi.size;
+    let h = fi.size / aspect;
+    image(fi.img, fi.x, fi.y, w, h);
+    pop();
+    fi.y -= fi.speed;
+    fi.alpha -= 3;
+    if (fi.alpha <= 0) floatingImgs.splice(i, 1);
+  }
+
+  push();
+  imageMode(CENTER);
+  if (isHoveringButton()) image(pointerCursor, mouseX, mouseY, 55, 55);
+  else image(normalCursor, mouseX, mouseY, 50, 50);
+  pop();
+}
+
+// Function to handle the mask distortion
+function drawDistortedMask() {
+  // Always draw the mask to the buffer first
+  pgMask.clear();
+  pgMask.imageMode(CENTER);
+  let maxSize = min(width, height) * 0.8;
+  let aspect = maskImg.width / maskImg.height;
+  let imgW = aspect > 1 ? maxSize : maxSize * aspect;
+  let imgH = aspect > 1 ? maxSize / aspect : maxSize;
+  pgMask.image(maskImg, pgMask.width / 2, pgMask.height / 2, imgW, imgH);
+
+  if (distort) {
+    // Smoothly move the distortion center
+    cx = lerp(cx, targetX, 0.1);
+    cy = lerp(cy, targetY, 0.1);
+
+    pgMask.loadPixels();
+    const d = pgMask.pixelDensity();
+    const radius = min(pgMask.width, pgMask.height) * 0.25;
+    const maxOffset = 50;
+
+    for (let y = 0; y < pgMask.height; y++) {
+      for (let x = 0; x < pgMask.width; x++) {
+        let idx = 4 * ((y * d) * (pgMask.width * d) + (x * d));
+        let dx = x - cx;
+        let dy = y - cy;
+        let dist = sqrt(dx * dx + dy * dy);
+        if (dist < radius) {
+          let effect = (1 - (dist / radius));
+          effect = effect * effect;
+          let sx = constrain(x + dx * effect * 0.5, 0, pgMask.width - 1);
+          let sy = constrain(y + dy * effect * 0.5, 0, pgMask.height - 1);
+          let sidx = 4 * (floor(sy * d) * (pgMask.width * d) + floor(sx * d));
+          pgMask.pixels[idx] = pgMask.pixels[sidx];
+          pgMask.pixels[idx + 1] = pgMask.pixels[sidx + 1];
+          pgMask.pixels[idx + 2] = pgMask.pixels[sidx + 2];
+        }
+      }
+    }
+    pgMask.updatePixels();
+  }
+
+  image(pgMask, 0, 0); // Draw the distorted buffer to the main canvas
+}
+
+
+function keyPressed() {
+  // Existing keypress logic
+  if (key.match(/[a-zA-Z]/)) {
+    let x = random(width);
+    let y = random(height);
+    let r = random(50, 150);
+    shapes.push(new BlobShape(x, y, r));
+    let numClusters = int(random(3, 8));
+    let batch = [];
+    for (let i = 0; i < numClusters; i++) {
+      batch.push(makeCluster());
+    }
+    shapeBatches.push(batch);
+  }
+// --- Deletion Logic ---
+  if (keyCode === DELETE || keyCode === BACKSPACE) {
+    // Check if there are elements to remove before calling pop()
+    if (shapes.length > 0) {
+      shapes.pop();
+    }
+    if (shapeBatches.length > 0) {
+      shapeBatches.pop();
+    }
+  }
+
+  if (keyCode === ENTER || keyCode === RETURN) {
+    animate = !animate;
+  }
+
+
+  // Space bar logic
+  if (inputStage > 3 && key === " " && !transitioning) {
+    // Original space bar logic
+    spacePressCount++;
+    let img = random(imageOptions);
+    floatingImgs.push({
+      img: img,
+      x: random(100, width - 100),
+      y: height,
+      alpha: 255,
+      size: 100,
+      speed: random(1, 2)
+    });
+    if (spacePressCount >= 8 && spacePressCount < 16) instructionText = "*Faster";
+    else if (spacePressCount >= 16) startTransitionToPhase3();
+
+    // Distortion effect
+    distort = true;
+    targetX = random(width);
+    targetY = random(height);
+  }
+}
+
+// Remaining helper functions
+function startTransitionToPhase3() {
+  transitioning = true;
+  transitionPhase = 1;
+  bars = [];
+}
+
+function drawTransition() {
+  background(1);
+  noFill();
+  stroke(0);
+  if (transitionPhase === 1) {
+    for (let i = 0; i < 6; i++) bars.push({
+      x: random(width),
+      y: random(height),
+      w: random(90, width),
+      h: random(5, 15),
+      color: randomBarColor()
+    });
+  }
+  for (let bar of bars) {
+    fill(bar.color);
+    rect(bar.x, bar.y, bar.w, bar.h);
+  }
+  if (transitionPhase === 1 && bars.length > 500) transitionPhase = 2;
+  if (transitionPhase === 2) {
+    bars.splice(0, 20);
+    if (bars.length === 0) window.location.href = 'phase3.html';
+  }
+}
+
+function randomBarColor() {
+  let palette = [color(255, 0, 0), color(0, 255, 0), color(0, 0, 255), color(255), color(0)];
+  return random(palette);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  pgBlobs.resizeCanvas(windowWidth, windowHeight);
+  pgMask.resizeCanvas(windowWidth, windowHeight);
+}
+
+function isHoveringButton() {
+  return audioBtn.elt.matches(":hover") || lightBtn.elt.matches(":hover");
+}
+
+function toggleAudio() {
+  if (playMusic) {
+    song.pause();
+    localStorage.setItem('audioState', 'false'); // Save state
+  } else {
+    song.loop();
+    localStorage.setItem('audioState', 'true'); // Save state
+  }
+  playMusic = !playMusic;
+}
+
+function toggleLight() {
+  blendSwitch = !blendSwitch;
+}
+
+function isAdjective(word) {
+  return adjSet.has(word.toLowerCase());
+}
+
+function styleButton(btn) {
+  btn.style("padding", "10px 25px");
+  btn.style("border-radius", "25px");
+  btn.style("font-size", "18px");
+  btn.style("border", "1px solid black");
+  btn.style("background", "#B2CBA7");
+  btn.style("color", "black");
+  btn.style("font-style", "italic");
+  btn.style("cursor", "none");
+  btn.style("font-family", "HelveticaNeue, sans-serif");
+  btn.style("transition", "all 0.3s ease");
+  btn.mouseOver(() => {
+    btn.style("background", "black");
+    btn.style("color", "#B2CBA7");
+  });
+  btn.mouseOut(() => {
+    btn.style("background", "#B2CBA7");
+    btn.style("color", "black");
+  });
+}
+</script>
+</body>
+</html>

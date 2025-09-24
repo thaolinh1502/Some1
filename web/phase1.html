@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>phase1</title>
+
+<!-- Typekit Fonts -->
+<link rel="stylesheet" href="https://use.typekit.net/dgx5jfj.css">
+<link rel="stylesheet" href="https://use.typekit.net/mwo0suw.css">
+
+<!-- p5.js -->
+<script src="libraries/p5.min.js"></script>
+<script src="libraries/p5.sound.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background: black;
+  font-family: "HelveticaNeue", sans-serif;
+  cursor: none;
+}
+canvas { display: block; }
+
+
+
+/* Glitch only for AUDIO + LIGHT */
+.glitch-btn::before,
+.glitch-btn::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: inherit;
+  border-radius: inherit;
+  padding: inherit;
+  font: inherit;
+  text-align: center;
+  line-height: normal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: inherit;
+  box-sizing: border-box;
+  opacity: 0;
+}
+
+.glitch-btn::before { color: red; }
+.glitch-btn::after { color: rgb(0, 255, 13); }
+
+.glitch-btn:hover::before,
+.glitch-btn:hover::after {
+  opacity: 1;
+  animation: glitch-lines 0.6s infinite linear alternate-reverse;
+}
+
+/* Keyframes */
+@keyframes glitch-lines {
+  0%   { clip-path: inset(10% 0 85% 0); transform: translateX(-3px); }
+  10%  { clip-path: inset(40% 0 40% 0); transform: translateX(3px); }
+  20%  { clip-path: inset(20% 0 65% 0); transform: translateX(-2px); }
+  30%  { clip-path: inset(60% 0 20% 0); transform: translateX(2px); }
+  40%  { clip-path: inset(80% 0 5% 0); transform: translateX(-4px); }
+  50%  { clip-path: inset(15% 0 70% 0); transform: translateX(4px); }
+  60%  { clip-path: inset(50% 0 30% 0); transform: translateX(-2px); }
+  70%  { clip-path: inset(30% 0 50% 0); transform: translateX(3px); }
+  80%  { clip-path: inset(70% 0 15% 0); transform: translateX(-3px); }
+  90%  { clip-path: inset(25% 0 60% 0); transform: translateX(2px); }
+  100% { clip-path: inset(0 0 0 0); transform: translateX(0); }
+}
+
+/* Username input */
+.username-container {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  border: 1px solid #B2CBA7;
+  border-radius: 40px;
+  padding: 10px 20px;
+  background: rgba(0,0,0,0);
+}
+.username-container input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #B2CBA7;
+  font-size: 18px;
+  font-style: italic;
+  width: 200px;
+}
+.username-container input::placeholder {
+  color: #B2CBA7;
+  opacity: 0.7;
+}
+
+/* Submit arrow (no glitch) */
+.submit-arrow {
+  border: 1px solid #B2CBA7;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  margin-left: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: none;
+  background: none;
+  transition: all 0.3s ease;
+}
+.submit-arrow:hover { background: #B2CBA7; }
+.submit-arrow svg {
+  stroke: #B2CBA7;
+  stroke-width: 2;
+  fill: none;
+  transition: stroke 0.3s ease;
+}
+.submit-arrow:hover svg { stroke: black; }
+
+/* Error message */
+.error-msg {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ff6b6b;
+  font-size: 14px;
+  font-style: italic;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.error-msg.show { opacity: 1; }
+
+/* Login window */
+.login-window {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  max-width: 800px;
+  height: 60%;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid #B2CBA7;
+background: radial-gradient(circle, rgba(0,255,76,0) 0%, rgba(116, 228, 67, 0.4) 90%);
+  backdrop-filter: blur(5px);
+}
+
+/* Login tab */
+.login-tab {
+  position: absolute;
+  top: -30px;
+  left: 0;
+  padding: 5px 15px;
+  border: 1px solid #B2CBA7;
+  border-bottom: none;
+  font-size: 14px;
+  color: #B2CBA7;
+  background: black;
+  font-style: italic;
+
+}
+
+/* Login button (no glitch) */
+.login-window button {
+  background: transparent;
+  border: 1px solid #B2CBA7;
+  padding: 10px 30px;
+  color: #B2CBA7;
+  font-style: italic;
+  cursor: none;
+  transition: all 0.3s ease;
+}
+.login-window button:hover {
+  background: #B2CBA7;
+  color: black;
+}
+
+.instruction-text {
+  position: absolute;
+  top: 45px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #B2CBA7;
+  font-size: 18px;
+  font-style: italic;
+  font-family: "HelveticaNeue", sans-serif;
+  pointer-events: none; /* won't block clicks */
+  transition: opacity 0.2s ease;
+}
+
+
+</style>
+</head>
+<body>
+  <!-- Username Input -->
+  <div class="username-container">
+    <input id="usernameInput" type="text" placeholder="*Insert your username">
+    <button class="submit-arrow" id="submitBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path d="M12 19V5M5 12l7-7 7 7"/>
+      </svg>
+    </button>
+  </div>
+  <div class="error-msg" id="errorMsg">*Please insert your username</div>
+
+  <!-- Login Window -->
+  <div class="login-window" id="loginWindow">
+    <div class="login-tab" id="loginTab">Guest</div>
+    <button id="loginBtn">LOG IN</button>
+  </div>
+  <div class="instruction-text" id="instructionText">*Say who you are</div>
+
+
+<script>
+let audioBtn, lightBtn;
+let elements = [];
+let maskImg, song;
+let playMusic = false;
+let blendSwitch = false;
+let normalCursor, pointerCursor;
+
+const usernameInput = document.getElementById("usernameInput");
+const submitBtn = document.getElementById("submitBtn");
+const loginWindow = document.getElementById("loginWindow");
+const loginTab = document.getElementById("loginTab");
+const loginBtn = document.getElementById("loginBtn");
+const errorMsg = document.getElementById("errorMsg");
+
+function preload() {
+  helveticaNeue = loadFont("fonts/HelveticaNeueItalic.ttf");
+  maskImg = loadImage("elements/SVG/maskp1.svg"); 
+  normalCursor = loadImage("elements/1x/cursor2-8.png");
+  pointerCursor = loadImage("elements/1x/cursor2act-8.png");
+  song = loadSound("elements/SVG/200222-electronic-drum-amp-bass-cyber-wonder-155550.mp3", () => {
+    // Check local storage on load
+    if (localStorage.getItem('audioState') === 'true') {
+      song.loop();
+      playMusic = true;
+    }
+  });
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  noCursor();
+
+  audioBtn = createButton("AUDIO");
+  audioBtn.class("glitch-btn");
+  audioBtn.attribute("data-text","AUDIO");
+  audioBtn.position(width - 260, 40);
+  audioBtn.mousePressed(toggleAudio);
+  styleButton(audioBtn);
+
+  lightBtn = createButton("LIGHT");
+  lightBtn.class("glitch-btn");
+  lightBtn.attribute("data-text","LIGHT");
+  lightBtn.position(width - 140, 40);
+  lightBtn.mousePressed(toggleLight);
+  styleButton(lightBtn);
+
+  for (let i = 0; i < 30; i++) elements.push(getRandomElement());
+
+  submitBtn.addEventListener("click", handleSubmit);
+  usernameInput.addEventListener("keypress", e => { if(e.key==="Enter") handleSubmit(); });
+
+  loginBtn.addEventListener("click", () => { window.location.href = "phase2.html"; });
+
+  window.addEventListener("click", (e)=>{
+    if(loginWindow.style.display==="flex" &&
+       !loginWindow.contains(e.target) &&
+       e.target !== submitBtn &&
+       e.target !== usernameInput) {
+      loginWindow.style.display="none";
+    }
+  });
+}
+
+function draw() {
+  background(10);
+
+ // --- Blink the instruction ---
+  const blinkSpeed = 30; // smaller = faster
+  let instruction = document.getElementById("instructionText");
+  if (frameCount % blinkSpeed < blinkSpeed / 2) {
+    instruction.style.opacity = 1;
+  } else {
+    instruction.style.opacity = 0;
+  }
+
+  if(random(1)<0.35) elements.push(getRandomElement());
+
+  if(blendSwitch) blendMode(HARD_LIGHT);
+  else blendMode(BLEND);
+
+  for(let i=elements.length-1;i>=0;i--){
+    let el=elements[i];
+    el.update();
+    el.display();
+    if(el.isDead()) elements.splice(i,1);
+  }
+
+  drawScanLines();
+
+  if(mouseOverInteractive()) image(pointerCursor, mouseX, mouseY, 55, 55);
+  else image(normalCursor, mouseX, mouseY, 50, 50);
+}
+
+// --- Username submit ---
+function handleSubmit() {
+  const username=usernameInput.value.trim();
+  if(!username){ errorMsg.classList.add("show"); return; }
+  errorMsg.classList.remove("show");
+  loginTab.textContent=username;
+  loginWindow.style.display="flex";
+}
+
+function mouseOverInteractive(){
+  const rect=usernameInput.getBoundingClientRect();
+  const submitRect=submitBtn.getBoundingClientRect();
+  const loginBtnRect=loginBtn.getBoundingClientRect();
+  const loginRect=loginWindow.getBoundingClientRect();
+  return (
+    (mouseX>=rect.left && mouseX<=rect.right && mouseY>=rect.top && mouseY<=rect.bottom)||
+    (mouseX>=submitRect.left && mouseX<=submitRect.right && mouseY>=submitRect.top && mouseY<=submitRect.bottom)||
+    (mouseX>=loginBtnRect.left && mouseX<=loginBtnRect.right && mouseY>=loginBtnRect.top && mouseY<=loginBtnRect.bottom)||
+    (loginWindow.style.display==="flex" &&
+     mouseX>=loginRect.left && mouseX<=loginRect.right &&
+     mouseY>=loginRect.top && mouseY<=loginRect.bottom)
+  );
+}
+
+// --- Glitch Elements ---
+class LogoGlitch {
+  constructor(){ this.pos=createVector(width/2,height/2); this.lifetime=random(200,1);
+    this.targetWidth=min(width,height)*0.6; this.targetHeight=this.targetWidth*(maskImg.height/maskImg.width);}
+  update(){this.lifetime--;}
+  isDead(){return this.lifetime<=0;}
+  display(){
+    push();
+    imageMode(CENTER);
+    let alpha=map(this.lifetime,0,20,0,180);
+    tint(178,203,167,alpha);
+    image(maskImg,this.pos.x+random(-10,10),this.pos.y+random(-10,10),this.targetWidth,this.targetHeight);
+    pop();
+  }
+}
+
+class GlitchLine {
+  constructor(){this.y=random(height); this.lifetime=random(15,40);}
+  update(){this.lifetime--;}
+  isDead(){return this.lifetime<=0;}
+  display(){fill(178,203,167); noStroke(); rect(random(-50,50),this.y,width+random(-100,100),random(2,6));}
+}
+
+function getRandomElement(){ if(random(1)<0.1) return new LogoGlitch(); return new GlitchLine(); }
+
+function drawScanLines(){ stroke(0,50); for(let i=0;i<height;i+=3) line(0,i,width,i); }
+
+function isHoveringButton(){ return audioBtn.elt.matches(":hover")||lightBtn.elt.matches(":hover"); }
+
+function styleButton(btn){
+  btn.style("padding","10px 25px");
+  btn.style("border-radius","25px");
+  btn.style("font-size","18px");
+  btn.style("border","1px solid #B2CBA7");
+  btn.style("background","black");
+  btn.style("font-style","italic");
+  btn.style("color","#B2CBA7");
+  btn.style("cursor","none");
+  btn.style("font-family","HelveticaNeue, sans-serif");
+  btn.style("transition","all 0.3s ease");
+  btn.mouseOver(()=>{ btn.style("background","#B2CBA7"); btn.style("color","black"); });
+  btn.mouseOut(()=>{ btn.style("background","black"); btn.style("color","#B2CBA7"); });
+}
+
+function toggleAudio() {
+  if (playMusic) {
+    song.pause();
+    localStorage.setItem('audioState', 'false'); // Save state
+  } else {
+    song.loop();
+    localStorage.setItem('audioState', 'true'); // Save state
+  }
+  playMusic = !playMusic;
+}
+function toggleLight(){ blendSwitch=!blendSwitch; }
+
+function windowResized(){
+  resizeCanvas(windowWidth, windowHeight);
+  audioBtn.position(width-260,40);
+  lightBtn.position(width-140,40);
+}
+</script>
+</body>
+</html>
